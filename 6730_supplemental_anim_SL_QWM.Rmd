@@ -1,0 +1,216 @@
+---
+title: "STAT 6730_Final Project Report_Animations"
+author: "Shuang Liu, Qiwei Men"
+date: "12/8/2019"
+output: 
+  prettydoc::html_pretty:
+    theme: cayman
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+library(gapminder)
+library(tidyverse)
+library(plotly)
+library(ggthemes)
+library(RColorBrewer)
+library(gifski)
+library(gganimate)
+library(gridExtra)
+library(webshot)
+library(magick)
+# must install package "png" as well, but no need to library it
+```
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+# this chunk of code adds several growth rate variables that will be used later
+gapminder2 <- gapminder %>%
+  dplyr::mutate(gdp = pop * gdpPercap) %>%
+  dplyr::group_by(country) %>%
+  dplyr::mutate(gdpPercapGrowth=c(NA,(exp(diff(log(gdpPercap)))-1)),
+            gdpGrowth = c(NA,(exp(diff(log(gdp)))-1)), 
+            popGrowth = c(NA,(exp(diff(log(pop)))-1)),
+            lifeGrowth = c(NA,(exp(diff(log(lifeExp)))-1)))
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+p <- ggplot(gapminder, aes(x = gdpPercap, y=lifeExp, size = pop, colour = continent)) +
+  geom_point(show.legend = TRUE,alpha = 0.7) +
+  scale_fill_manual(values=c("#D55E00","#E69F00", "#0072B2", "#009E73","#CC79A7"))+
+  scale_x_log10() +
+  labs(x = "GDP per Capita", y = "Life Expectancy")+
+  theme(plot.title = element_text(size=11), panel.background = element_blank(), axis.line = element_line(), text = element_text(size=8), legend.position = c(.9, .5)) + expand_limits(x = 1000000)
+
+p + transition_states(year) +
+  labs(title = "Year: {closest_state}")
+```
+
+```{r, echo=FALSE}
+my_theme <- theme_classic(base_family = "Times") +
+  theme(axis.text.y = element_blank()) +
+  theme(axis.ticks.y = element_blank()) +
+  theme(axis.line.y = element_blank()) +
+  theme(legend.background = element_rect(fill = "gainsboro")) +
+  theme(plot.background = element_rect(fill = "gainsboro")) +
+  theme(panel.background = element_rect(fill = "gainsboro")) +
+  theme(plot.title = element_text(size=22))
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+pop10 <- gapminder %>%
+  select(country, pop, year, continent) %>%
+  group_by(year) %>%  # for each year we assign a rank
+  arrange(year, -pop) %>%
+  mutate(rank = 1:n(), 
+         Value_lbl = round(pop/1000000, digits = 2)) %>%  # assign ranking
+  filter(rank <= 10)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = pop10) +
+  aes(group = country, fill = continent) +
+  aes(xmin = 0 ,
+      xmax = pop / 1000000) +
+  aes(ymin = rank - .45,
+      ymax = rank + .45) +
+  scale_y_reverse() +
+  scale_x_continuous(
+    limits = c(-500, 1600),
+    breaks = c(0, 200, 400, 600, 800, 1000, 1200, 1400, 1600),
+    labels = c(0, 200, 400, 600, 800, 1000, 1200, 1400, 1600)) +
+  labs(fill = "") +
+  geom_rect(alpha = .7) +
+  labs(x = 'Population (millions)') +
+  geom_text(aes(label = country, y = rank, x = -50), 
+            col = "gray13",
+            hjust = "right") +
+  geom_text(aes(label = as.character(Value_lbl), y = rank, x = Value_lbl + 50, ), col = "gray13", hjust = "left") +
+  labs(y = "") +
+  scale_fill_manual(values=c("#D55E00","#E69F00", "#0072B2", "#009E73","#CC79A7")) +
+  my_theme -> pop10_plot
+```
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+pop10_plot + transition_states(year, transition_length = 4, state_length = 1) + 
+  labs(title = 'Year: {closest_state}' )
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+gdpp10 <- gapminder %>%
+  select(country, gdpPercap, year, continent) %>%
+  group_by(year) %>%  # for each year we assign a rank
+  arrange(year, -gdpPercap) %>%
+  mutate(rank = 1:n(), 
+         Value_lbl = round(gdpPercap/1000, digits = 2)) %>%  # assign ranking
+  filter(rank <= 10)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = gdpp10) +
+  aes(group = country, fill = continent) +
+  aes(xmin = 0 ,
+      xmax = gdpPercap / 1000) +
+  aes(ymin = rank - .45,
+      ymax = rank + .45) +
+  scale_y_reverse() +
+  scale_x_continuous(
+    limits = c(-50, 140),
+    breaks = c(0, 20, 40, 60, 80, 100, 120, 140),
+    labels = c(0, 20, 40, 60, 80, 100, 120, 140)) +
+  labs(fill = "") +
+  geom_rect(alpha = .7) +
+  labs(x = ' GDP per Capita (thousand US$)') +
+  geom_text(aes(label = country, y = rank, x = -5), 
+            col = "gray13",
+            hjust = "right") +
+  geom_text(aes(label = as.character(Value_lbl), y = rank, x = Value_lbl + 5, ), col = "gray13", hjust = "left") +
+  labs(y = "") +
+  scale_fill_manual(values=c("#D55E00","#E69F00", "#0072B2", "#009E73","#CC79A7")) +
+  my_theme -> gdpp10_plot
+```
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+gdp10 <- gapminder2 %>%
+  select(year, country,continent, gdp) %>%
+  group_by(year) %>%
+  arrange(year, -gdp) %>%
+  mutate(rank = 1:n(), 
+         Value_lbl = round(gdp/1000000000000, digits = 2)) %>%  # assign ranking
+  filter(rank <= 10)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = gdp10) +
+  aes(group = country, fill = continent) +
+  aes(xmin = 0 ,
+      xmax = gdp / 1000000000000) +
+  aes(ymin = rank - .45,
+      ymax = rank + .45) +
+  scale_y_reverse() +
+  scale_x_continuous(
+    limits = c(-5, 16),
+    breaks = c(0, 2, 4, 6, 8, 10, 12, 14, 16),
+    labels = c(0, 2, 4, 6, 8, 10, 12, 14, 16)) +
+  labs(fill = "") +
+  geom_rect(alpha = .7) +
+  labs(x = ' GDP (trillion US$)') +
+  geom_text(aes(label = country, y = rank, x = -0.5), 
+            col = "gray13",
+            hjust = "right") +
+  geom_text(aes(label = as.character(Value_lbl), y = rank, x = Value_lbl + 0.5), col = "gray13", hjust = "left") +
+  labs(y = "") +
+  scale_fill_manual(values=c("#D55E00","#E69F00", "#0072B2", "#009E73","#CC79A7")) +
+  my_theme -> gdp10_plot
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+gdpp10_plot + transition_states(year, transition_length = 4, state_length = 1) + 
+  labs(title = 'Year: {closest_state}' )
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+gdp10_plot + transition_states(year, transition_length = 4, state_length = 1) + 
+  labs(title = 'Year: {closest_state}' )
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+life10 <- gapminder %>%
+  select(year, country,continent, lifeExp) %>%
+  group_by(year) %>%
+  arrange(year, -lifeExp) %>%
+  mutate(rank = 1:n(), 
+         Value_lbl = lifeExp) %>%  # assign ranking
+  filter(rank <= 10)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data = life10) +
+  aes(group = country, fill = continent) +
+  aes(xmin = 0 ,
+      xmax = lifeExp) +
+  aes(ymin = rank - .45,
+      ymax = rank + .45) +
+  scale_y_reverse() +
+  scale_x_continuous(
+    limits = c(-20, 100),
+    breaks = c(0, 20, 40, 60, 80, 100),
+    labels = c(0, 20, 40, 60, 80, 100)) +
+  labs(fill = "") +
+  geom_rect(alpha = .7) +
+  labs(x = ' Life Expectancy (years)') +
+  geom_text(aes(label = country, y = rank, x = -5), 
+            col = "gray13",
+            hjust = "right") +
+  geom_text(aes(label = as.character(Value_lbl), y = rank, x = Value_lbl + 5, ), col = "gray13", hjust = "left") +
+  labs(y = "") +
+  scale_fill_manual(values=c("#D55E00","#E69F00", "#0072B2", "#009E73","#CC79A7")) +
+  my_theme -> life10_plot
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+life10_plot + transition_states(year, transition_length = 4, state_length = 1) + 
+  labs(title = 'Year: {closest_state}' )
+```

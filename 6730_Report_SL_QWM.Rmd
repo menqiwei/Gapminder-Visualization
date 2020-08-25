@@ -1,0 +1,607 @@
+---
+title: "STAT 6730_Project Report"
+author: "Shuang Liu, Qiwei Men"
+date: "12/6/2019"
+output: 
+  pdf_document:
+    pandoc_args: [
+      "-V", "classoption=twocolumn"
+    ]
+indent: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE}
+library(gapminder)
+library(tidyverse)
+library(plotly)
+library(ggthemes)
+library(RColorBrewer)
+library(gifski)
+library(gridExtra)
+# must install package "png" as well, but no need to library it
+```
+
+\twocolumn
+
+## STAT 6730 Final Project: Data Exploration with Gapminder
+### Shuang Liu, Qiwei Men
+
+`Gapminder` contains population, GDP per Capita and life expectancy for 142 countries in 5 continents from 1952 to 2007 in increments of 5 years. The first part of the project describes how development history unfold differently on different continents and in different countries over the 5 decades. Of particular interest is which countries are the leaders in this racing of development, and which countries strive in chasing the leaders. The second part of the project reveals the unusual dropping patterns and the relevant history. Although many countries experienced growth in the 5 decades, some countries encountered significant drops due to political events or diseases. The third part, which has a deviant interest, explores whether the leading digit in "naturally occurring numbers" (i.e., population and GDP per Capita) follows the famous Benford's law. Techniques used in part I and II are pipes, data manipulation and visualization. Part III employs Monte Carlo simulation.
+
+### 1.1 Population
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+pop <- gapminder %>%
+  group_by(continent,year) %>%
+  summarise(pop = sum(as.numeric(pop)))
+```
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+Sys.setenv("plotly_username"="liu.3267")
+Sys.setenv("plotly_api_key"="OgkBIUChCSzodiDkckdQ")
+
+f <- list(
+  family = "",
+  size = 20,
+  color = "#000000"
+)
+
+p <- plot_ly(pop, x = ~as.factor(year), y = ~pop, type = 'bar',colors = c("#D55E00","#E69F00","#0072B2","#009E73","#CC79A7"), color = ~continent, textfont = list(color = '#000000', size = 16)) %>% layout(title = "World Total Population (1952 - 2007)", titlefont = f, yaxis = list(title = "World Population", titlefont = f), xaxis = list(title = ""), barmode = "stack", legend = list(x = 0, y = 1))
+
+plotly_IMAGE(p, format = "png", out_file = "world_pop.png")
+```
+
+```{r, echo = FALSE, message=FALSE, warning=FALSE, include = FALSE}
+pop_1952 <- gapminder %>%
+  filter(year == 1952) %>%
+  group_by(continent) %>%
+  summarise(pop = sum(as.numeric(pop)))%>%
+  mutate(p = pop/sum(pop))
+ 
+
+pop_2007 <- gapminder %>%
+  filter(year == 2007) %>%
+  group_by(continent) %>%
+  summarise(pop = sum(as.numeric(pop)))%>%
+  mutate(p = pop/sum(pop))
+```
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE, include = FALSE}
+p <- plot_ly(textfont = list(color = '#000000', size = 16), marker = list(colors = c("#D55E00","#E69F00","#0072B2","#009E73","#CC79A7"))) %>%
+  add_pie(data = pop_1952, labels = ~continent, values = ~pop, domain = list(row = 0 , column = 0)) %>%
+  add_pie(data = pop_2007, labels = ~continent, values = ~pop, domain = list(row = 0, column = 1)) %>%
+  layout(
+    title = "Percent of World Total Population in Each Continent \n left: 1952    right: 2007", 
+    titlefont = f, 
+    showlegend = F,
+    grid=list(rows=1, columns=2),
+    xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+    yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE))
+
+plotly_IMAGE(p, format = "png", out_file = "conti_pop.png")
+```
+
+```{r, fig.width=3, fig.height=3, echo=FALSE, include=FALSE}
+library(png)
+library(grid)
+img1 <- rasterGrob(as.raster(readPNG("/Users/shuang/Dropbox/0_Course Work/STAT 6730 Comp Stat/Final Project Report/world_pop.png")), interpolate = FALSE)
+img2 <- rasterGrob(as.raster(readPNG("/Users/shuang/Dropbox/0_Course Work/STAT 6730 Comp Stat/Final Project Report/conti_pop.png")), interpolate = FALSE)
+p1 <- grid.arrange(img1, img2, nrow = 2)
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# this chunk of code adds several growth rate variables that will be used later
+gapminder2 <- gapminder %>%
+  dplyr::mutate(gdp = pop * gdpPercap) %>%
+  dplyr::group_by(country) %>%
+  dplyr::mutate(gdpPercapGrowth=c(NA,(exp(diff(log(gdpPercap)))-1)),
+            gdpGrowth = c(NA,(exp(diff(log(gdp)))-1)), 
+            popGrowth = c(NA,(exp(diff(log(pop)))-1)),
+            lifeGrowth = c(NA,(exp(diff(log(lifeExp)))-1)))
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+top10_pop_growth <- gapminder2 %>%
+  filter(year == 1952 | year == 2007) %>%
+  dplyr::select(country, continent, pop) %>%
+  group_by(country) %>%
+  mutate(popGrowth_rate = c(NA,(exp(diff(log(pop)))-1)))%>%
+  na.omit(top10_pop_growth) %>%
+  arrange(desc(popGrowth_rate)) %>%
+  head(10)
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+p2 <- ggplot(top10_pop_growth,aes(x = reorder(country,popGrowth_rate), y = popGrowth_rate, fill = continent)) + 
+  geom_bar(stat = "identity",width = 0.6)+
+  theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))+  
+  labs(y = "Growth Rate (%)", x = NULL)+ 
+  coord_flip() + geom_text(aes(label=round(popGrowth_rate,2)), vjust=0.1,hjust=-0.1, size=2)+
+  scale_fill_manual(values=c("#D55E00","#0072B2")) + expand_limits(y = 15) + theme(panel.background = element_blank(), axis.line.x = element_line(),text = element_text(size=8), legend.position = c(.8, .3))
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+pop10_2007 <- gapminder %>%
+  filter(year==2007) %>%
+  select(country, pop, year, continent) %>%
+  group_by(year) %>%  # for each year we assign a rank
+  arrange(year, -pop) %>%
+  mutate(rank = 1:n(), 
+         Value_lbl = round(pop/1000000, digits = 2)) %>%  # assign ranking
+  filter(rank <= 10)
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+p3 <- ggplot(pop10_2007,aes(x = reorder(country,pop), y = pop/1000000, fill = continent)) + 
+  geom_bar(stat = "identity",width = 0.6)+
+  theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))+ 
+  labs(y = "Population (million)", x = NULL)+ 
+  coord_flip() + geom_text(aes(label=round(Value_lbl,2)), vjust=0.1,hjust=-0.1, size=2)+
+  scale_fill_manual(values=c("#D55E00","#E69F00", "#0072B2", "#009E73","#CC79A7")) + expand_limits(y = 1600) + theme(panel.background = element_blank(), axis.line.x = element_line(), text = element_text(size=8), legend.position = c(.8, .3))
+```
+
+```{r, POP1, echo=FALSE, fig.width=3, fig.height=2.5, fig.cap="\\label{fig:POP1}Change of World Population", warning= FALSE, message=FALSE}
+grid.arrange(p1, nrow = 1)
+```
+
+From 1952 to 2007, world population has experienced the fastest growth in human history. The total population has grown from 2.4 billion to 6.3 billion (Fig.\ref{fig:POP1} upper panel). Population in each continent grew gradually, while Africa grew faster than Europe. In 1952, Africa occupies 9.87% percent of the world population. In 2007, this percentage has increased to 15%. In 1952, Europe occupies 17.4%, while in 2007 its percentage has decreased to 9.38%. The share of Asia, Americas and Oceania has been relatively stable. (Fig.\ref{fig:POP1} lower panel)
+
+```{r, POP3, echo=FALSE, fig.width=4, fig.height=3, fig.cap="\\label{fig:POP3}10 countries with the largest population (2007)", warning= FALSE, message=FALSE}
+p3
+```
+
+As of 2007, Asian countries accounted for more than half of the 10 most populous countries in the world (Fig.\ref{fig:POP3}). East and South Asia are still the most densely populated regions. The gap between China and India, which are the two most populous countries, is narrowing (supplemental animations, animation 2).
+
+```{r, POP2, echo=FALSE, fig.width=4, fig.height=3, fig.cap="\\label{fig:POP2}10 countries with the fastest population growth (1952 - 2007)", warning= FALSE, message=FALSE}
+p2
+```
+
+In terms of growth rates, countries with the fastest population growth are all from Asia and Africa (Fig.\ref{fig:POP2}), which is consistent with the trend we see in Fig.\ref{fig:POP1}. An interesting phenomenon is that the Middle East countries, especially the oil-producers such as Kuwait, Jordan, Saudi Arabia and Oman have experienced the most rapid growth, mainly due to the rapid development of the oil industry and the influx of immigrants after World War II.
+
+### 1.2 GDP per Capita
+
+```{r,echo=FALSE}
+# this chunk of code adds several growth rate variables that will be used later
+gapminder2 <- gapminder %>%
+  dplyr::mutate(gdp = pop * gdpPercap) %>%
+  dplyr::group_by(country) %>%
+  dplyr::mutate(gdpPercapGrowth=c(NA,(exp(diff(log(gdpPercap)))-1)),
+            gdpGrowth = c(NA,(exp(diff(log(gdp)))-1)), 
+            popGrowth = c(NA,(exp(diff(log(pop)))-1)),
+            lifeGrowth = c(NA,(exp(diff(log(lifeExp)))-1)))
+```
+
+```{r,echo=FALSE}
+# growth by continent
+  popgrowth_by_continent <- gapminder %>% 
+  group_by(year,continent) %>%
+  dplyr::summarize(gdpPercap = median(gdpPercap))
+```
+
+```{r,echo=FALSE}
+p1.1 <- ggplot(popgrowth_by_continent, aes(x = year, y = gdpPercap, color = continent)) + geom_line(lwd = 1) +
+scale_color_manual(values=c("#D55E00","#E69F00","#0072B2","#009E73","#CC79A7")) + geom_point() +
+  labs(x = NULL, y = "GDP per Capita (median)") + theme(panel.background = element_blank(), axis.line = element_line(), text = element_text(size=10))
+```
+
+```{r,echo=FALSE}
+gdp_percap <- gapminder %>%
+  filter(year == 1952 | year == 2007) %>%
+  dplyr::select(country, continent, gdpPercap) %>%
+  group_by(country) %>%
+  dplyr::mutate(gdp_percap_growth_rate = c(NA,(exp(diff(log(gdpPercap)))-1))) %>%
+  na.omit(gdppc_growth_all) %>%
+  arrange(desc(gdp_percap_growth_rate)) %>%
+  head(10)
+
+p1.3 <- ggplot(gdp_percap, aes(x=reorder(country, gdp_percap_growth_rate
+), y=gdp_percap_growth_rate, fill = continent)) +
+  scale_fill_manual(values=c("#D55E00", "#0072B2")) +
+  geom_bar(stat='identity',width = 0.6) +
+  labs(y = "Growth Rate (%)", x = NULL) + coord_flip() + geom_text(aes(label=round(gdp_percap_growth_rate,2)), vjust=0.1,hjust=-0.1, size=3) + expand_limits(y = 32) + theme(panel.background = element_blank(), axis.line.x = element_line(), text = element_text(size=8), legend.position = c(.8, .3))
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+gdpp10_2007 <- gapminder %>%
+  filter(year==2007) %>%
+  select(country, gdpPercap, year, continent) %>%
+  group_by(year) %>%  # for each year we assign a rank
+  arrange(year, -gdpPercap) %>%
+  mutate(rank = 1:n(), 
+         Value_lbl = round(gdpPercap/1000, digits = 2)) %>%  # assign ranking
+  filter(rank <= 10)
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+p1.2 <- ggplot(gdpp10_2007,aes(x = reorder(country,gdpPercap), y = gdpPercap/1000, fill = continent)) + 
+  geom_bar(stat = "identity",width = 0.6)+
+  theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))+ 
+  labs(y = " GDP per Capita (thousand USD)", x = NULL)+ 
+  coord_flip() + geom_text(aes(label=round(Value_lbl,2)), vjust=0.1,hjust=-0.1, size=2)+
+  scale_fill_manual(values=c("#E69F00", "#0072B2", "#009E73")) + expand_limits(y = 60) + theme(panel.background = element_blank(), axis.line.x = element_line(),text = element_text(size=8), legend.position = c(.9, .3))
+```
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+gdp10_2007 <- gapminder2 %>%
+  filter(year == 2007) %>%
+  select(year, country,continent, gdp) %>%
+  group_by(year) %>%
+  arrange(year, -gdp) %>%
+  mutate(rank = 1:n(), 
+         Value_lbl = round(gdp/1e+12, digits = 2)) %>%  # assign ranking
+  filter(rank <= 10)
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+p1.4 <- ggplot(gdp10_2007,aes(x = reorder(country,gdp), y = gdp/1e+12, fill = continent)) + 
+  geom_bar(stat = "identity",width = 0.6)+
+  theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))+ 
+  labs(y = " GDP (trillion USD)", x = NULL)+ 
+  coord_flip() + geom_text(aes(label=round(Value_lbl,2)), vjust=0.1,hjust=-0.1, size=2)+
+  scale_fill_manual(values=c("#E69F00", "#0072B2", "#009E73")) + expand_limits(y = 13.5) + theme(panel.background = element_blank(), axis.line.x = element_line(),text = element_text(size=8), legend.position = c(.8, .3))
+```
+
+```{r, GDP1, echo=FALSE, fig.width=4, fig.height=3, fig.cap="\\label{fig:GDP1}Change in median GDP per Capita in each continent (1952 - 2007)", warning= FALSE, message=FALSE}
+p1.1
+```
+
+By observing the changes in GDP per Capita over the 5 decades, we can see that world wealth was growing continuously, especially in European countries and Oceania countries (Fig.\ref{fig:GDP1}). This is mainly because of the US assistance and the process of European integration after the war. On the other hand, the economic in Africa had almost stagnated. The gap between different regions was expanding, which also indicates the problem of development imbalance.
+
+```{r, GDP2, echo=FALSE, fig.width=4, fig.height=3, fig.cap="\\label{fig:GDP2}10 countries with the largest GDP per Capita (2007)", warning= FALSE, message=FALSE}
+p1.2
+```
+
+Half of the top 10 countries with the highest GDP per Captia are from Europe, followed by Asia and North America, which are the most developed areas in the world (Fig.\ref{fig:GDP2}).
+
+```{r, GDP3, echo=FALSE, fig.width=4, fig.height=3, fig.cap="\\label{fig:GDP3}10 countries with the fastest growth rate of GDP per Capita (1952 - 2007)", warning= FALSE, message=FALSE}
+p1.3
+```
+
+On the other hand, the fastest growing economies are mainly from Asia and Africa (Fig.\ref{fig:GDP3}). Emerging economies in East and Southeast Asia like South Korea, Taiwan, Singapore, Hong Kong experienced a rapid growth. They were called The Four Asian Dragons because of this achivement.
+
+```{r, GDP4, echo=FALSE, fig.width=4, fig.height=3, fig.cap="\\label{fig:GDP4}10 countries with the largest GDP (2007)", warning= FALSE, message=FALSE}
+p1.4
+```
+
+In terms of total GDP, the United States is still the largest economy in the world as of 2007 (Fig.\ref{fig:GDP4}). Total GDP shows strength of countries. The relationship between them profoundly affects the political and economic structure of the world.
+
+### 1.3 Life Expectancy
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+p2.1 <- ggplot(gapminder, aes(x = year, y = lifeExp, group = year)) + geom_boxplot(fill = "#D55E00") +  
+  labs(y = "Life Expectancy", x = "Year") + theme_classic()
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# by continent
+  lifeExp_by_continent <- gapminder %>% 
+  group_by(year,continent) %>%
+  dplyr::summarize(lifeExp = median(lifeExp))
+  
+p2.2 <- ggplot(lifeExp_by_continent, aes(x = year, y = lifeExp, color = continent)) + geom_line(lwd = 1) + geom_point() +
+  scale_color_manual(values=c("#D55E00","#E69F00", "#0072B2", "#009E73","#CC79A7"))+
+  labs(y = "Life Expectancy (median)", x = "Year") + theme(panel.background = element_blank(), axis.line = element_line(), text = element_text(size=10))
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+top10_life_growth <- gapminder2 %>%
+  filter(year == 1952 | year == 2007) %>%
+  dplyr::select(country, continent, lifeExp) %>%
+  group_by(country) %>%
+  mutate(lifeGrowth_rate = c(NA,(exp(diff(log(lifeExp)))-1)))%>%
+  na.omit(top10_life_growth) %>%
+  arrange(desc(lifeGrowth_rate)) %>%
+  head(10)
+
+p2.3 <- ggplot(top10_life_growth,aes(x = reorder(country,lifeGrowth_rate), y = lifeGrowth_rate, fill = continent)) + 
+  geom_bar(stat = "identity",width = 0.6) +
+  theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5)) +  
+  labs(y = "Growth Rate (%)", x = NULL) + 
+  coord_flip() + geom_text(aes(label=round(lifeGrowth_rate,2)), vjust=0.1,hjust=-0.1, size=2)+
+  scale_fill_manual(values=c("#D55E00","#E69F00", "#0072B2", "#009E73","#CC79A7")) + expand_limits(y = 1.1) + theme(panel.background = element_blank(), axis.line.x = element_line(), text = element_text(size=8), legend.position = c(.9, .2))
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+life10_2007 <- gapminder %>%
+  filter(year == 2007) %>%
+  select(year, country,continent, lifeExp) %>%
+  group_by(year) %>%
+  arrange(year, -lifeExp) %>%
+  mutate(rank = 1:n(), 
+         Value_lbl = lifeExp) %>%  # assign ranking
+  filter(rank <= 10)
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+p2.4 <- ggplot(life10_2007,aes(x = reorder(country,lifeExp), y = lifeExp, fill = continent)) + 
+  geom_bar(stat = "identity",width = 0.6)+
+  theme(axis.text.x=element_text(angle=90,hjust=1,vjust=0.5))+ 
+  labs(y = "Life Expectancy (years)", x = NULL)+ 
+  coord_flip() + geom_text(aes(label=round(Value_lbl,2)), vjust=0.1,hjust=-0.1, size=2)+
+  scale_fill_manual(values=c("#E69F00", "#0072B2", "#009E73","#CC79A7")) + expand_limits(y = 100) + theme(panel.background = element_blank(), axis.line.x = element_line(),text = element_text(size=8), legend.position = c(.95, .3))
+```
+
+```{r, LIFE1, echo=FALSE, fig.width=4, fig.height=3, fig.cap="\\label{fig:LIFE1}Life Expectancy Growth (1952-2007)", warning= FALSE, message=FALSE}
+#grid.arrange(a, b, c, nrow = 2)
+p2.1
+```
+
+Life expectancy increased smoothly in the 5 decades. The median is rising in the box, which implys that the distribution of life expectancies has changed from a right-skewed distribution to a left-skewed distribution (Fig.\ref{fig:LIFE1}). More people live a longer life because of the development of medical and health services . 
+
+```{r, LIFE2, echo=FALSE, fig.width=4, fig.height=3, fig.cap="\\label{fig:LIFE2}Change of median life expectancy in each continent (1952 - 2007)", warning= FALSE, message=FALSE}
+p2.2
+```
+
+Not like what we saw in GDP per capita, the discrepancy in life expectancies between continents is getting smaller, except Africa (Fig.\ref{fig:LIFE2}). All the other four continents have improved their median life expectancies to over 70 years, while that of Africa is still below 60. From Fig.\ref{fig:LIFE4} and Fig.\ref{fig:LIFE3}, we can see that the leaders of life expectancy are very similar to that of GDP per Capita. Developed European countries dominate the richest and longest-lived ranking list, while Asian and African countries experienced the greatest improvement.
+
+```{r, LIFE4, echo=FALSE, fig.width=4, fig.height=3, fig.cap="\\label{fig:LIFE4}10 countries with the highest life expectancy (2007)", warning= FALSE, message=FALSE}
+p2.4
+```
+
+```{r, LIFE3, echo=FALSE, fig.width=4, fig.height=3, fig.cap="\\label{fig:LIFE3}10 countries with the greatest life expectancy growth (1952 - 2007)", warning= FALSE, message=FALSE}
+p2.3
+```
+
+### 2 Unusual Patterns
+
+```{r,echo=FALSE}
+comm_countries <-c("Albania", "Bosnia and Herzegovina", "Bulgaria", "Croatia", "Czech Republic", "Germany", "Hungary", "Montenegro", "Poland", "Romania", "Serbia", "Slovak Republic", "Slovenia")
+
+
+Europe <- gapminder %>% 
+  subset(continent == "Europe") %>%
+  mutate(socialist = country %in% comm_countries)
+
+comm <- subset(Europe, socialist == TRUE)
+
+p3.1 <- ggplot() +
+  # draw the original data series with grey
+  geom_line(aes(year, gdpPercap, group = country), data = Europe, colour = alpha("grey", 0.8)) +
+  # colourise only the filtered data
+  geom_line(aes(year, gdpPercap, colour = country), data = comm) + scale_size_manual(values = c(0.5,1)) + 
+  labs(y = "GDP per Capita", x = "Year") + guides(color = FALSE) + theme_classic() + theme(text = element_text(size=10))
+```
+
+```{r,echo=FALSE}
+Europe_1992 <-gapminder2 %>%
+  filter(continent == "Europe", year == 1992)
+
+Europe_1992$socialist_state <- Europe_1992$country %in% comm_countries
+
+p3.2 <- ggplot(Europe_1992, aes(x=reorder(country, gdpPercapGrowth), y=gdpPercapGrowth, fill = socialist_state)) +
+  geom_bar(stat='identity') + coord_flip() + 
+  labs(x = NULL, y = "Growth Rate (%)") +
+  scale_fill_manual(values=c("#F26419", "#33658A")) + theme_classic() + theme(text = element_text(size=8))
+```
+
+```{r,echo=FALSE}
+Africa_country_aids <- c("Botswana","Kenya","Malawi","Namibia","Rwanda", "South Africa", "Zimbabwe","Mozambique")
+
+
+Africa_country_aids2 <- c("Egypt", "Morocco", "Algeria", "Liberia", "Mali","Tunisia","Mauritania","Niger","Senegal" ,"Madagascar"    )
+
+
+Africa <- gapminder2 %>%
+  filter(continent == "Africa") %>%
+  mutate(HIVpre_10 = country %in% Africa_country_aids)
+
+af_aids <- subset(Africa, HIVpre_10 == TRUE)
+
+
+p3.3 <- ggplot() +
+  # draw the original data series with grey
+  geom_line(aes(year, lifeExp, group = country), data = Africa, colour = alpha("grey", 0.8)) +
+  # colourise only the filtered data
+  geom_line(aes(year, lifeExp, colour = country), data = af_aids) + scale_size_manual(values = c(0.5,1)) + guides(color = FALSE) + labs(y = "Life Expectancy", x = "Year") + theme_classic() + theme(text = element_text(size=10))
+
+Africa2 <- gapminder2 %>%
+  filter(country %in% Africa_country_aids | country %in% Africa_country_aids2, year == 1997) %>%
+  mutate(HIVpre_10 = country %in% Africa_country_aids)
+
+p3.4 <- ggplot(Africa2, aes(x=reorder(country, lifeGrowth), y=lifeGrowth, fill = HIVpre_10)) +
+  geom_bar(stat='identity') + coord_flip() + 
+  labs(x = NULL, y = "Growth Rate (%)") +
+  scale_fill_manual(values=c("#F26419", "#33658A")) + theme_classic() + theme(text = element_text(size=8))
+```
+
+```{r, HIS1, echo=FALSE, fig.width=4, fig.height=3, fig.cap="\\label{fig:HIS1}GDP per Capita change in European countries (colored: former socialist states; gray: non-socialist states)", warning= FALSE, message=FALSE}
+p3.1
+```
+
+```{r, HIS2, echo=FALSE, fig.width=3, fig.height=5, fig.cap="\\label{fig:HIS2}GDP per Capita growth of European countries (1987-1992)", warning= FALSE, message=FALSE}
+p3.2 + theme(legend.key.size=unit(0.5,'lines'),
+legend.key.height=unit(0.1,"cm"),
+legend.text=element_text(size=5),
+legend.position=c(0.85,0.3),
+legend.direction = "vertical")
+```
+
+```{r, HIS3, echo=FALSE, fig.width=4, fig.height=3, fig.cap="\\label{fig:HIS3}Life expectancy change in Africa countries (colored: HIV prevelance > 10%; gray: HIV prevelance <= 10%)", warning= FALSE, message=FALSE}
+p3.3
+```
+
+Almost half of European countries experienced a dramatic decrease of GDP per capita at the begining of 1990s (Fig.\ref{fig:HIS1}, Fig.\ref{fig:HIS2}). This is because of the break-up of Eastern bloc countries in 1989. Former socialist states struggled to adapt to free-market systems after they changed their political systems. Germany is the only expection in this recession. The unification masks this process happened in East German.
+
+HIV / AIDS epidemic is taking a devastating toll on the population of many sub-Saharan countries. In the nine countries with an adult HIV prevalence of 10 percent or more (Botswana, Kenya, Malawi, Mozambique, Namibia, Rwanda, South Africa, Zambia and Zimbabwe), the impact of AIDS is even more dramatic: more than 10 years of life expectancy have already been lost to AIDS (Fig.\ref{fig:HIS3}). 
+
+### 3 Benford's Law
+
+The law states that in many naturally occurring collections of numbers, the leading significant digit is likely to be small. For example, in sets that obey the law, 1 appears as the leading significant digit about 30% of the time, while 9 appears as the leading significant digit less than 5% of the time. More formally, a set of decimal numbers is said to satisfy Benford's law if the leading digit $d\ (d \in \{1, ..., 9\})$ occurs with probability $P(d) = log_{10}(\frac{d+1}{d}) = log_{10}(1+\frac{1}{d})$. The leading digits in such a set thus have the distribution shown in Fig.\ref{fig:BEN0}.
+
+```{r, BEN0, echo = FALSE, fig.width=4, fig.height=3, fig.cap="\\label{fig:BEN0}Benford's Law", warning= FALSE, message=FALSE}
+# Benford's Law
+benlaw <- function (d){log10(1 + 1 / d)}
+digits <- 1:9
+barplot(benlaw(digits), names.arg = digits, xlab = NULL, ylim = c(0, .35))
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+### Functions
+# function to extract the first digit of a number
+bben <- function(k){as.numeric(head(strsplit(as.character(k),'')[[1]],n=1))}
+# function to calculate Ben Law probability
+benlaw <- function (d){log10(1 + 1 / d)}
+# function to simulate a sample of digits from Benford's Law and count the frequency of each digit
+count.sim <- function(n){
+  # n: sample size
+  sim <- sample(x=c(1:9), size=n, replace=TRUE, prob = benlaw(1:9))
+  count <- numeric()
+  for (i in 1:9){
+    count[i] <- sum(sim == i)
+  }
+  return(count)
+}
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# compare Benford's law and the leading digits of population in 2007
+pop.prop.2007 <- gapminder %>%
+  subset(year == 2007) %>%
+  select(pop) %>%
+  rowwise() %>% 
+  mutate(digit = bben(pop)) %>%
+  table() %>%
+  colSums()/nrow(subset(gapminder, year == 2007)) %>% 
+  as.numeric()
+
+df <- rbind(data_frame(digit = 1:9, 
+                       proportion = pop.prop.2007,
+                       distribution = "leading digit, pop, 2007"),
+            data_frame(digit = 1:9, 
+                       proportion = benlaw(digit), 
+                       distribution = "Benford's Law"))
+
+a <- ggplot(df, aes(digit, proportion)) + 
+  geom_col(aes(fill = distribution), position = "dodge") +
+  scale_x_continuous(breaks = 1:9) + 
+  theme(legend.position = c(.7, .8), panel.background = element_blank(), axis.line = element_line(), text = element_text(size=10))  
+```
+
+```{r, BEN1, echo=FALSE, fig.width=4, fig.height=3, fig.cap="\\label{fig:BEN1}Compare the distribution of leading digit of population in 2007 to Benford's law", warning= FALSE, message=FALSE}
+#grid.arrange(a, b, c, d, nrow = 2)
+a
+```
+
+Fig.\ref{fig:BEN1} compares the observed distribution of the leading digits in population in 2007 to the distribution predicted by Benford's law. At first glance, the two distributions are quite similar. What statistical test may be used to test whether the leading digit of population in 2007 follows Benford's law or not? Chi-square Goodness-of-fit test might be a good choice. It tests if a sample of data came from a population with a specific distribution. It can be applied to discrete distributions. It can be used to determine whether there is a significant difference between the expected frequencies and the observed frequencies in one or more categories. 
+
+- $H_0$:	The leading digits of population in 2007 follows Benford's law.
+- $H_a$:	The leading digits of population in 2007 does not follow Benford's law.
+
+- Chi-square Statistic: $Q_{k-1} = \sum_{i=1}^{k}\frac{(O_i-np_i)^2}{np_i}$ The larger the value of this statistic, the larger the discrepancy between the two distributions being tested.
+
+    * $k$: number of digits (=9)
+
+    * $k-1$: degree of freedom (=8)
+
+    * $O_i$: observed count of digit $i$
+
+    * $n$: total number of observations (= 142)
+
+    * $p_i$: probability of digit $i$ predicted by Benford's law.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# sample size
+n <- nrow(subset(gapminder, year == 2007))
+# expected count for each digit from Benford's law
+E <- n*benlaw(1:9)
+# Monte Carlo Sampling
+samples <- data.frame(Q = replicate(10000, chi <- sum((count.sim(n)-E)^2/E)))
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# observed count of each digit in 2007 data
+pop.count.2007 <- gapminder %>%
+  subset(year == 2007) %>%
+  select(pop) %>%
+  rowwise() %>% 
+  mutate(digit = bben(pop)) %>%
+  table() %>%
+  colSums() %>% 
+  as.numeric()
+# critical value
+pop.2007.crit <- sum((pop.count.2007-E)^2/E)
+# p-value
+p.pop.2007 <- sum(samples$Q >= pop.2007.crit)/10000
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# sampling distribution and critical value
+sampd <- ggplot(samples, aes(x = Q)) + geom_histogram(fill = "grey", colour = "black") + labs(y = NULL) + theme_classic()
+b <- sampd + geom_vline(xintercept=pop.2007.crit, color = "blue", linetype="dashed", size = 1.5) + theme(text = element_text(size=10))
+```
+
+```{r, BEN2, echo=FALSE, fig.width=4, fig.height=3, fig.cap="\\label{fig:BEN2}Sampling distribution of Q and the critical value", warning= FALSE, message=FALSE}
+#grid.arrange(a, b, c, d, nrow = 2)
+b
+```
+
+Let's estimate the p-value by Monte Carlo simulation. 10,000 samples of digits of size 142 were drawn from Benford's law. For each sample, the value of $Q$ was calculated. Fig.\ref{fig:BEN2} shows the sampling distribution of Q. From the observed sample, we calculated the value of Q, which is the critical value. It is shown as a blue vertical line in Fig.\ref{fig:BEN2}. The estimated p-value is the "area" under the the sampling distribution to the right of the critical value. The critical value is **`r round(pop.2007.crit, 2)`**. The estimated p-value is **`r round(p.pop.2007, 2)`**.
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+# compare Benford's law and the first digit of gdpPercap in 2007
+gdpPercap.prop.2007 <- gapminder %>%
+  subset(year == 2007) %>%
+  select(gdpPercap) %>%
+  rowwise() %>% 
+  mutate(digit = bben(gdpPercap)) %>%
+  table() %>%
+  colSums()/nrow(subset(gapminder, year == 2007)) %>% 
+  as.numeric()
+
+df <- rbind(data_frame(digit = 1:9, 
+                       proportion = gdpPercap.prop.2007,
+                       distribution = "leading digit, gdpPercap, 2007"),
+            data_frame(digit = 1:9, 
+                       proportion = benlaw(digit), 
+                       distribution = "Benford's Law"))
+
+c <- ggplot(df, aes(digit, proportion)) + 
+  geom_col(aes(fill = distribution), position = "dodge") +
+  scale_x_continuous(breaks = 1:9) + theme(legend.position = c(.7, .8), panel.background = element_blank(), axis.line = element_line(), text = element_text(size=10))
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+gdp.count.2007 <- gapminder %>%
+  subset(year == 2007) %>%
+  select(gdpPercap) %>%
+  rowwise() %>% 
+  mutate(digit = bben(gdpPercap)) %>%
+  table() %>%
+  colSums() %>% 
+  as.numeric()
+# critical value
+gdp.2007.crit <- sum((gdp.count.2007-E)^2/E)
+# p-value
+p.gdp.2007 <- sum(replicate(10000, chi <- sum((count.sim(n)-E)^2/E)) >= gdp.2007.crit)/10000
+```
+
+```{r, echo = FALSE, warning = FALSE, message = FALSE}
+d <- sampd + geom_vline(xintercept=gdp.2007.crit, color = "blue", linetype="dashed", size = 1.5) + theme(text = element_text(size=10))
+```
+
+```{r, BEN3, echo=FALSE, fig.width=4, fig.height=3, fig.cap="\\label{fig:BEN3}Compare the distribution of leading digit of gdpPercap in 2007 to Benford's law", warning= FALSE, message=FALSE}
+#grid.arrange(a, b, c, d, nrow = 2)
+c
+```
+
+```{r, BEN4, echo=FALSE, fig.width=4, fig.height=3, fig.cap="\\label{fig:BEN4}Sampling distribution of Q and the critical value", warning= FALSE, message=FALSE}
+#grid.arrange(a, b, c, d, nrow = 2)
+d
+```
+
+The same comparison was made between the leading digit of GDP per Capita in 2007 to Benford's law (Fig.\ref{fig:BEN3}), and the same Chi-square test was carried out (Fig.\ref{fig:BEN4}). The critical value is **`r round(gdp.2007.crit, 2)`**. The estimated p-value is **`r round(p.gdp.2007, 2)`**.
+
+Both p-values can be considered large, indicating that the leading digits in both empirical distributions follow Benford's law well. P-value is an indicator of similarity here. It seems the leading digits of population in 2007 follows Benford's law more closely than that of GDP per Capita 2007. One can more or less confirm this by visually checking Fig. \ref{fig:BEN1} and Fig. \ref{fig:BEN3}.  
+
+### References
+- WORLD DEMOGRAPHIC TRENDS : REPORT OF THE SECRETARY-GENERAL
+  - Symbol:E/CN.9/1999/5
+  - Session / Year:32
+  - Agenda Item(s):6Distribution:GEN
+  - Area:UNDOC
+- https://en.wikipedia.org/wiki/Benford%27s_law
+- https://en.wikipedia.org/wiki/Eastern_Bloc
